@@ -6,39 +6,37 @@ import primesql
 import sqlalchemy
 from sqlalchemy import orm
 
-from flask import Flask, render_template
+from flask import Flask, render_template, stream_with_context
 
 app = Flask(__name__)
-
-
-def get_style():
-    return '''
-    body {
-        font-family: monospace;
-    }
-
-    '''
 
 
 @app.route("/primes")
 def route_primes():
 
-    def generate_row():
-        yield (
-            '<html><head><style>' + get_style() +
-            '</style></head><body><ol>')
+    def stream_template(template_name, **context):
+
+        app.update_template_context(context)
+
+        template = app.jinja_env.get_template(template_name)
+        result = template.stream(context)
+        result.enable_buffering(1000)
+        return result
+
+    def generate_primes():
 
         engine = sqlalchemy.create_engine(
             primesql.PrimeNumber.get_database_uri())
 
         with orm.Session(engine) as session:
 
-            for prime in session.query(primesql.PrimeNumber):
-                yield '<li>{}</li>'.format(prime.value)
+            for prime_number in session.query(
+                    primesql.PrimeNumber):
+                yield prime_number.value
 
-        yield '</ol></body></html>'
-
-    return app.response_class(generate_row())
+    # Keep request context, it's apparently needed to build static URLs.
+    return app.response_class(stream_with_context(stream_template(
+        'primes.html', primes=generate_primes())))
 
 
 if __name__ == "__main__":
